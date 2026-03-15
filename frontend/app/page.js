@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -7,6 +8,7 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const router = useRouter();
 
   const analyzeEmail = async () => {
     if (!email.trim()) return;
@@ -49,7 +51,7 @@ export default function Home() {
         <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob animation-delay-4s"></div>
       </div>
 
-      {/* Header with Theme Toggle */}
+      {/* Header with Navigation Buttons */}
       <div className="relative z-20 flex justify-between items-center p-6 md:p-8">
         <div>
           <h1
@@ -70,16 +72,32 @@ export default function Home() {
           </p>
         </div>
 
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          className={`relative group px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
-            darkMode
-              ? "bg-white/10 hover:bg-white/20 text-blue-200 backdrop-blur-md border border-white/20"
-              : "bg-slate-900/10 hover:bg-slate-900/20 text-slate-700 backdrop-blur-md border border-slate-900/20"
-          }`}
-        >
-          {darkMode ? "☀️ Light" : "🌙 Dark"}
-        </button>
+        <div className="flex gap-3 items-center">
+          {/* Training Module Button */}
+          <button
+            onClick={() => router.push("/training")}
+            className={`relative group px-4 py-2 rounded-xl font-medium transition-all duration-300 flex items-center gap-2 ${
+              darkMode
+                ? "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/50 hover:shadow-purple-500/70"
+                : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60"
+            }`}
+          >
+            <span className="text-lg">🎓</span>
+            <span className="hidden sm:inline">Training</span>
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className={`relative group px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+              darkMode
+                ? "bg-white/10 hover:bg-white/20 text-blue-200 backdrop-blur-md border border-white/20"
+                : "bg-slate-900/10 hover:bg-slate-900/20 text-slate-700 backdrop-blur-md border border-slate-900/20"
+            }`}
+          >
+            {darkMode ? "☀️ Light" : "🌙 Dark"}
+          </button>
+        </div>
       </div>
 
       {/* Main Content */}
