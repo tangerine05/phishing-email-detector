@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
+import re
+from fastapi.responses import FileResponse
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+import uuid
 
 app = FastAPI()
 
@@ -27,18 +32,140 @@ def home():
 @app.post("/predict")
 def predict(email: str):
 
-    # Convert email to vector
     vec = vectorizer.transform([email])
 
     prediction = model.predict(vec)[0]
     probability = model.predict_proba(vec)[0][1]
 
+    feature_names = vectorizer.get_feature_names_out()
+    weights = model.coef_[0]
+
+    words = email.lower().split()
+
+    keywords = []
+
+    for word in words:
+        if word in feature_names:
+            index = list(feature_names).index(word)
+            if weights[index] > 0:
+                keywords.append(word)
+
+    keywords = list(set(keywords))[:5]
+
+    # URL detection
+    urls = re.findall(r'https?://\S+', email)
+
+    # ---------- Risk Score ----------
+    keyword_score = min(len(keywords) * 4, 20)
+    url_score = min(len(urls) * 20, 20)
+
+    risk_score = int((probability * 60) + keyword_score + url_score)
+
+    # Threat level classification
+    if risk_score >= 80:
+        threat = "HIGH"
+    elif risk_score >= 50:
+        threat = "MEDIUM"
+    else:
+        threat = "LOW"
+
     if prediction == 1:
         result = "Phishing"
     else:
         result = "Legitimate"
+    
+    urgent_words = ["urgent", "immediately", "verify", "suspend", "alert", "action"]
+    urgent_detected = False
 
+    for word in urgent_words:
+        if word in email.lower():
+            urgent_detected = True
+            break
+    
     return {
         "prediction": result,
-        "confidence": float(probability)
+        "confidence": float(probability),
+        "keywords": keywords,
+        "urls": urls,
+        "risk_score": risk_score,
+        "threat_level": threat
     }
+
+@app.get("/generate-report")
+def generate_report(email: str):
+
+    vec = vectorizer.transform([email])
+    prediction = model.predict(vec)[0]
+    probability = model.predict_proba(vec)[0][1]
+
+    feature_names = vectorizer.get_feature_names_out()
+    weights = model.coef_[0]
+
+    words = email.lower().split()
+    keywords = []
+
+    for word in words:
+        if word in feature_names:
+            index = list(feature_names).index(word)
+            if weights[index] > 0:
+                keywords.append(word)
+
+    keywords = list(set(keywords))[:5]
+
+    urls = re.findall(r'https?://\S+', email)
+
+    keyword_score = min(len(keywords) * 4, 20)
+    url_score = min(len(urls) * 20, 20)
+
+    risk_score = int((probability * 60) + keyword_score + url_score)
+
+    if risk_score >= 80:
+        threat = "HIGH"
+    elif risk_score >= 50:
+        threat = "MEDIUM"
+    else:
+        threat = "LOW"
+
+    urgent_words = ["urgent", "immediately", "verify", "suspend", "alert", "action"]
+    urgent_detected = any(word in email.lower() for word in urgent_words)
+
+    result = "Phishing" if prediction == 1 else "Legitimate"
+
+    filename = f"report_{uuid.uuid4()}.pdf"
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("Email Threat Analysis Report", styles["Title"]))
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph(f"Prediction: {result}", styles["Normal"]))
+    elements.append(Paragraph(f"Confidence: {probability:.2f}", styles["Normal"]))
+    elements.append(Paragraph(f"Threat Level: {threat}", styles["Normal"]))
+    elements.append(Paragraph(f"Risk Score: {risk_score}/100", styles["Normal"]))
+
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("Detected Issues:", styles["Heading3"]))
+
+    if keywords:
+        elements.append(Paragraph("✔ Suspicious keywords", styles["Normal"]))
+
+    if urls:
+        elements.append(Paragraph("✔ Malicious URL", styles["Normal"]))
+
+    if urgent_detected:
+        elements.append(Paragraph("✔ Urgent language pattern", styles["Normal"]))
+
+    elements.append(Spacer(1, 20))
+
+    if keywords:
+        elements.append(Paragraph(f"Keywords: {', '.join(keywords)}", styles["Normal"]))
+
+    if urls:
+        elements.append(Paragraph(f"Detected Links: {', '.join(urls)}", styles["Normal"]))
+
+    doc = SimpleDocTemplate(filename)
+    doc.build(elements)
+
+    return FileResponse(filename, filename="email_security_report.pdf")
