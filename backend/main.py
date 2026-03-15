@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 import uuid
+from difflib import SequenceMatcher
 
 app = FastAPI()
 
@@ -21,17 +22,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load ML model
 model = joblib.load("phishing_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
+
 
 @app.get("/")
 def home():
     return {"message": "Phishing Email Detection API"}
 
-@app.post("/predict")
-def predict(email: str):
 
+@app.post("/predict")
+def predict(email: str, sender: str = ""):
+
+    # ---------- Sender Analysis ----------
+    sender_domain = ""
+
+    if sender and "@" in sender:
+        sender_domain = sender.split("@")[1].lower()
+
+    suspicious_tlds = [".xyz", ".top", ".ru", ".tk", ".ml"]
+    suspicious_tld = any(sender_domain.endswith(tld) for tld in suspicious_tlds)
+
+    # ---------- Typo-squatting detection ----------
+    trusted_domains = [
+        "paypal.com",
+        "amazon.com",
+        "google.com",
+        "apple.com",
+        "microsoft.com"
+    ]
+
+    impersonation = None
+
+    for domain in trusted_domains:
+        similarity = SequenceMatcher(None, sender_domain, domain).ratio()
+
+        if similarity > 0.8 and sender_domain != domain:
+            impersonation = domain
+            break
+
+    # ---------- ML prediction ----------
     vec = vectorizer.transform([email])
 
     prediction = model.predict(vec)[0]
@@ -52,16 +82,16 @@ def predict(email: str):
 
     keywords = list(set(keywords))[:5]
 
-    # URL detection
+    # ---------- URL detection ----------
     urls = re.findall(r'https?://\S+', email)
 
-    # ---------- Risk Score ----------
+    # ---------- Risk score ----------
     keyword_score = min(len(keywords) * 4, 20)
     url_score = min(len(urls) * 20, 20)
 
     risk_score = int((probability * 60) + keyword_score + url_score)
 
-    # Threat level classification
+    # ---------- Threat level ----------
     if risk_score >= 80:
         threat = "HIGH"
     elif risk_score >= 50:
@@ -69,27 +99,26 @@ def predict(email: str):
     else:
         threat = "LOW"
 
-    if prediction == 1:
-        result = "Phishing"
-    else:
-        result = "Legitimate"
-    
     urgent_words = ["urgent", "immediately", "verify", "suspend", "alert", "action"]
-    urgent_detected = False
+    urgent_detected = any(word in email.lower() for word in urgent_words)
 
-    for word in urgent_words:
-        if word in email.lower():
-            urgent_detected = True
-            break
-    
+    result = "Phishing" if prediction == 1 else "Legitimate"
+
     return {
         "prediction": result,
         "confidence": float(probability),
         "keywords": keywords,
         "urls": urls,
         "risk_score": risk_score,
-        "threat_level": threat
+        "threat_level": threat,
+        "urgent_language": urgent_detected,
+        "sender_domain": sender_domain,
+        "suspicious_tld": suspicious_tld,
+        "impersonation_detected": impersonation
     }
+
+
+# ---------------- PDF REPORT (UNCHANGED CONTENT) ----------------
 
 @app.get("/generate-report")
 def generate_report(email: str):
